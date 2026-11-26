@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI CCTV 얼굴 인식</title>
+<style>
+  :root {
+    --bg: #eef1f4; --card: #ffffff; --ink: #172033; --sub: #5b667a;
+    --line: #d9dee6; --ok: #0f9d58; --no: #d93025; --warn: #b26a00; --accent: #1f4fd8; --person: #6b7280;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; }
+  body { padding: env(safe-area-inset-top) 12px calc(92px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto; }
+  .hide { display: none !important; }
+  header { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 10px; }
+  h1 { font-size: 17px; margin: 0; }
+  #gear { border: 1px solid var(--line); background: var(--card); color: var(--sub); border-radius: 999px; padding: 7px 14px; font-size: 13px; }
+
+  /* 카메라 */
+  .cam { position: relative; width: 100%; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 4/3; }
+  .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .cam video { transform: scaleX(-1); }
+  .cam.back video { transform: none; }
+  #status { position: absolute; left: 8px; bottom: 8px; max-width: 70%; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 6px; }
+  #flip { position: absolute; right: 8px; top: 8px; background: rgba(0,0,0,.55); color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+  #modeTag { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; font-weight: 700; padding: 5px 10px; border-radius: 8px; }
+  #flash { position: absolute; inset: 0; pointer-events: none; border: 6px solid transparent; border-radius: 14px; opacity: 0; }
+  #flash[data-k="unknown"] { --fc: #d93025; --fb: rgba(217,48,37,.28); }
+  #flash[data-k="review"] { --fc: #f29900; --fb: rgba(242,153,0,.28); }
+  #flash[data-k="snap"] { --fc: #ffffff; --fb: rgba(255,255,255,.55); }
+  #flash.go { animation: fl .7s ease-out; }
+  @keyframes fl { 0% { opacity: 1; border-color: var(--fc); background: var(--fb); } 100% { opacity: 0; border-color: var(--fc); background: transparent; } }
+  #oval { position: absolute; left: 50%; top: 52%; width: 44%; height: 72%; transform: translate(-50%, -50%); border: 3px dashed rgba(255,255,255,.75); border-radius: 50%; pointer-events: none; }
+  #guide { position: absolute; left: 10px; right: 10px; top: 44px; text-align: center; color: #fff; background: rgba(0,0,0,.6); border-radius: 12px; padding: 9px 12px; }
+  #guideText { font-size: 18px; font-weight: 700; }
+  #guideSub { font-size: 12px; opacity: .85; margin-top: 2px; }
+  #guideBar { height: 6px; background: rgba(255,255,255,.25); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  #guideBar i { display: block; height: 100%; width: 0; background: #34d399; }
+  #toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); max-width: 92%; background: rgba(15,157,88,.95); color: #fff; font-size: 15px; font-weight: 700; padding: 10px 16px; border-radius: 999px; text-align: center; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #toast.warn { background: rgba(242,153,0,.96); }
+  #toast.no { background: rgba(217,48,37,.95); }
+
+  /* 하단 메뉴 */
+  #nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--card); border-top: 1px solid var(--line); display: flex; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); gap: 6px; max-width: 560px; margin: 0 auto; }
+  #nav button { flex: 1; border: 0; background: none; border-radius: 12px; padding: 8px 0 6px; color: var(--sub); font-size: 13px; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  #nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #nav button.on { background: #e8eeff; color: var(--accent); }
+
+  /* 공통 */
+  .view { display: none; margin-top: 12px; }
+  .view.on { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .small { font-size: 12px; color: var(--sub); }
+  .mute { color: var(--sub); } .ok { color: var(--ok); } .warn { color: var(--warn); } .no { color: var(--no); }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  input[type=text], select { width: 100%; padding: 14px; font-size: 17px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); }
+  .btn { display: block; width: 100%; padding: 15px; font-size: 16px; font-weight: 700; border: 0; border-radius: 12px; background: var(--accent); color: #fff; margin-top: 10px; text-align: center; }
+  .btn.alt { background: #e6eaf0; color: var(--ink); font-weight: 600; }
+  .btn.danger { background: #fde8e6; color: var(--no); }
+  .btn.sm { padding: 11px; font-size: 14px; }
+  .btn:disabled { opacity: .45; }
+  .linkbtn { display: block; width: 100%; background: none; border: 0; color: var(--accent); font-size: 14px; padding: 12px 0 2px; }
+  .empty { text-align: center; color: var(--sub); font-size: 14px; line-height: 1.7; padding: 22px 8px; }
+  .row2 { display: flex; gap: 8px; }
+  .row2 .btn { margin-top: 8px; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 8px 0; }
+  .chk input { width: 20px; height: 20px; }
+  input[type=range] { width: 100%; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+  #prog, #evProg { font-size: 13px; color: var(--sub); margin-top: 8px; min-height: 18px; }
+
+  /* 등록 */
+  .big { font-size: 20px; font-weight: 800; margin: 0 0 4px; }
+  .people { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+  .pcard { flex: 0 0 auto; width: 76px; text-align: center; position: relative; }
+  .pcard img, .pcard .ph { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; background: #e6eaf0; display: block; margin: 0 auto 4px; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line); }
+  .pcard .pn { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pcard button { position: absolute; top: -4px; right: 2px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: #fde8e6; color: var(--no); font-size: 12px; line-height: 22px; padding: 0; }
+  .done { text-align: center; }
+  .done img { width: 110px; height: 110px; border-radius: 50%; object-fit: cover; border: 3px solid var(--ok); }
+  .done .big { color: var(--ok); margin-top: 8px; }
+
+  /* 출입 체크 */
+  .seg { display: flex; gap: 8px; margin-bottom: 12px; }
+  .seg button { flex: 1; padding: 16px 0; font-size: 18px; font-weight: 800; border-radius: 14px; border: 2px solid var(--line); background: #fff; color: var(--sub); }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .roster b { font-size: 15px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .chip { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #e6eaf0; color: var(--sub); }
+  .chip.on { background: var(--ok); color: #fff; }
+  .face { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .face:last-child { border-bottom: 0; }
+  .face .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .name { font-size: 24px; font-weight: 700; }
+  .name.person { color: var(--person); font-weight: 600; }
+  .name.review { color: var(--warn); }
+  .pct { font-size: 34px; font-weight: 700; line-height: 1.1; color: var(--ok); }
+  .pct.review { color: var(--warn); }
+  .verdict { font-size: 13px; font-weight: 600; }
+  .bar { height: 8px; background: #e6eaf0; border-radius: 4px; overflow: hidden; margin: 6px 0 4px; }
+  .bar > i { display: block; height: 100%; background: var(--ok); width: 0; }
+  .bar > i.review { background: #f29900; }
+  .cmp { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; }
+  .cmp figure { margin: 0; text-align: center; font-size: 11px; color: var(--sub); }
+  .cmp img, .cmp .ph { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 3px; }
+  .cmp .ph { display: flex; align-items: center; justify-content: center; background: #f0f2f5; font-size: 11px; }
+  .cmp .vs { font-size: 18px; color: var(--sub); }
+
+  /* 기록 */
+  .sums { display: flex; gap: 8px; margin-bottom: 12px; }
+  .sumcard { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 6px; text-align: center; }
+  .sumcard b { display: block; font-size: 26px; }
+  .sumcard span { font-size: 12px; color: var(--sub); }
+  .le { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .le:last-child { border-bottom: 0; }
+  .le img, .le .ph { width: 56px; height: 56px; border-radius: 12px; object-fit: cover; background: #e6eaf0; flex: 0 0 auto; }
+  .le .lm { flex: 1; min-width: 0; }
+  .le .ln { font-size: 17px; font-weight: 700; }
+  .le .lr { text-align: right; }
+  .le .lp { font-size: 16px; font-weight: 700; color: var(--ok); margin-bottom: 3px; }
+  .tag { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .tag.match { background: #e3f5ea; color: #0b7a43; }
+  .tag.review { background: #fdf0d5; color: #8a5200; }
+  .tag.unknown { background: #eceff3; color: #4b5563; }
+
+  /* 설정·평가 */
+  .scroll { overflow-x: auto; }
+  .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .tbl th, .tbl td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; white-space: nowrap; }
+  .sum { background: #f6f8fb; border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 10px 0; font-size: 14px; line-height: 1.7; }
+  details summary { font-size: 15px; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AI CCTV 얼굴 인식</h1>
+  <button id="gear">설정</button>
+</header>
+
+<div class="cam" id="cam">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+  <div id="oval" class="hide"></div>
+  <div id="flash" data-k="unknown"></div>
+  <div id="modeTag">얼굴 등록</div>
+  <button id="flip">카메라 전환</button>
+  <div id="guide" class="hide"><div id="guideText"></div><div id="guideSub"></div><div id="guideBar"><i></i></div></div>
+  <div id="toast"></div>
+  <div id="status">모델 불러오는 중…</div>
+</div>
+
+<!-- ① 등록 -->
+<section class="view" id="v_reg">
+  <div class="card" id="regIdle">
+    <p class="big">얼굴 등록</p>
+    <div class="small" style="margin-bottom:10px">이름을 입력하고 시작하면 카메라가 안내에 따라 자동으로 촬영합니다.</div>
+    <input type="text" id="regName" placeholder="이름 (비우면 자동 번호)" maxlength="20" autocomplete="off">
+    <button class="btn" id="regStart" disabled>카메라·모델 준비 중…</button>
+    <button class="linkbtn" id="upToggle">사진·동영상으로 등록하기</button>
+    <div id="upBox" class="hide">
+      <label class="btn alt sm" for="files">사진·동영상 선택</label>
+      <input type="file" id="files" accept="image/*,video/*" multiple style="display:none">
+      <div id="prog"></div>
+      <div class="thumbs" id="thumbs"></div>
+      <button class="btn sm" id="save" disabled>이 사람 저장</button>
+      <button class="btn alt sm" id="reset">추가한 얼굴 비우기</button>
+      <div class="small" style="margin-top:8px">정면 사진 3~10장 또는 얼굴이 잘 나온 동영상 1개. 여러 명이 찍힌 사진은 가장 큰 얼굴만 사용합니다. 첫 번째 얼굴이 대표 사진입니다.</div>
+    </div>
+  </div>
+
+  <div class="card hide" id="regBusy">
+    <p class="big" id="regBusyTxt">촬영 중</p>
+    <div class="small">화면의 안내에 따라 자세를 바꿔주세요. 자동으로 찍힙니다.</div>
+    <div class="thumbs" id="regShots"></div>
+    <button class="btn alt sm" id="regCancel">취소</button>
+  </div>
+
+  <div class="card hide done" id="regDone">
+    <div id="doneBox"></div>
+    <button class="btn" id="doneNext">다음 사람 등록</button>
+    <button class="btn alt" id="doneGo">출입 체크로 이동</button>
+  </div>
+
+  <div class="card">
+    <h2>등록된 사람 <span class="small" id="regCount"></span></h2>
+    <div class="people" id="regPeople"></div>
+  </div>
+</section>
+
+<!-- ② 출입 체크 -->
+<section class="view" id="v_check">
+  <div class="seg">
+    <button data-m="출항">출항</button>
+    <button data-m="입항">입항</button>
+  </div>
+  <div class="card roster">
+    <b id="rosterTxt"></b>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="card hide" id="chkEmpty">
+    <div class="empty">먼저 얼굴을 등록하세요.</div>
+    <button class="btn" id="goReg">얼굴 등록하러 가기</button>
+  </div>
+  <div class="card">
+    <div id="resEmpty" class="mute">카메라에 얼굴을 비춰주세요.</div>
+    <div id="resBox"></div>
+  </div>
+</section>
+
+<!-- ③ 기록 -->
+<section class="view" id="v_log">
+  <div class="sums" id="logSum"></div>
+  <div class="card">
+    <div id="logList"></div>
+  </div>
+  <div class="row2">
+    <button class="btn alt sm" id="logCsv">CSV 내보내기</button>
+    <button class="btn danger sm" id="logClear">기록 초기화</button>
+  </div>
+</section>
+
+<!-- 설정 -->
+<section class="view" id="v_set">
+  <button class="btn alt sm" id="setBack" style="margin-top:0;margin-bottom:12px">← 돌아가기</button>
+
+  <div class="card">
+    <h2>일치 기준 (거리)</h2>
+    <input type="range" id="thr" min="0.35" max="0.60" step="0.01">
+    <div class="small" id="thrTxt"></div>
+  </div>
+
+  <div class="card">
+    <h2>알림</h2>
+    <label class="chk"><input type="checkbox" id="alertOn"> 미등록자·확인 필요 감지 시 화면 점멸과 진동</label>
+    <label class="chk"><input type="checkbox" id="soundOn"> 효과음</label>
+    <button class="btn alt sm" id="alertTest">알림 테스트</button>
+    <div class="small" style="margin-top:6px">진동은 안드로이드 Chrome에서만 동작합니다.</div>
+  </div>
+
+  <div class="card">
+    <h2>데이터</h2>
+    <button class="btn alt sm" id="export">데이터 내보내기 (JSON)</button>
+    <button class="btn alt sm" id="import">데이터 가져오기</button>
+    <input type="file" id="file" accept="application/json" style="display:none">
+    <button class="btn danger sm" id="wipe">데모 초기화 (등록·기록 모두 삭제)</button>
+    <div class="small" style="margin-top:8px">데이터는 이 휴대폰 브라우저에만 저장됩니다. 발표 전에 내보내기로 백업해 두세요.</div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>인식 성능 시험</summary>
+      <div class="small" style="margin:8px 0">정답 기준을 고른 뒤 시험용 사진·동영상을 올리면 정답·오인식·놓침이 집계됩니다. (동영상은 프레임 최대 8개)</div>
+      <select id="truth"></select>
+      <label class="btn alt sm" for="evFiles">시험 사진·동영상 올리기</label>
+      <input type="file" id="evFiles" accept="image/*,video/*" multiple style="display:none">
+      <div id="evProg"></div>
+      <div id="evSum"></div>
+      <div class="scroll"><table class="tbl" id="evTbl" style="display:none">
+        <thead><tr><th>파일</th><th>후보</th><th>일치율</th><th>거리</th><th>판정</th><th>정답</th></tr></thead>
+        <tbody id="evBody"></tbody>
+      </table></div>
+      <button class="btn alt sm" id="evCsv" style="display:none">결과 CSV 내보내기</button>
+    </details>
+  </div>
+
+  <div class="small" id="diag" style="word-break:break-all"></div>
+</section>
+
+<!-- 하단 메뉴 -->
+<nav id="nav">
+  <button data-v="reg">
+    <svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20c0-4 3-6 7-6s7 2 7 6"/><path d="M19 4v6M16 7h6"/></svg>등록
+  </button>
+  <button data-v="check">
+    <svg viewBox="0 0 24 24"><path d="M14 4h5v16h-5"/><path d="M3 12h11"/><path d="M10 8l4 4-4 4"/></svg>출입 체크
+  </button>
+  <button data-v="log">
+    <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>기록
+  </button>
+</nav>
+
+<div id="lb" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.85);align-items:center;justify-content:center"><img id="lbImg" alt="" style="width:min(80vw,360px);height:min(80vw,360px);object-fit:cover;border-radius:14px"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
+<script>
+window.addEventListener("error", e => { const el = document.getElementById("status"); if (el) el.textContent = "스크립트 오류: " + (e.message || "알 수 없음"); });
+window.addEventListener("unhandledrejection", e => { const el = document.getElementById("status"); if (el) el.textContent = "처리 오류: " + ((e.reason && (e.reason.message || e.reason.name)) || e.reason); });
+
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model/";
+const KEY = "faces_v1", KEY_THR = "faces_thr", KEY_PH = "faces_photos_v1", KEY_LOG = "faces_log_v1";
+const MAX_PEOPLE = 30, MAX_PER = 15, MAX_STAGE = 15, MAX_LOG = 200;
+const REVIEW_MARGIN = 0.08;   // 일치 기준 ~ 기준+0.08 구간은 '확인 필요'
+const VLABEL = { match: "일치", review: "확인 필요", unknown: "미등록" };
+const STEPS = ["정면을 바라보세요", "고개를 살짝 왼쪽으로", "고개를 살짝 오른쪽으로", "턱을 살짝 들어주세요", "턱을 살짝 내려주세요"];
+const $ = id => document.getElementById(id);
+
+const video = $("video"), overlay = $("overlay"), ctx = overlay.getContext("2d");
+const loadJSON = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch (_) { return def; } };
+let db = loadJSON(KEY, {});
+let photos = loadJSON(KEY_PH, {});
+let log = loadJSON(KEY_LOG, []);
+let thr = parseFloat(localStorage.getItem(KEY_THR)) || 0.5;
+let mode = null;   // null = 기록 꺼짐 (출항/입항 버튼을 눌러야 기록 시작)
+let alertOn = localStorage.getItem("faces_alert") !== "0";
+let soundOn = localStorage.getItem("faces_sound") !== "0";
+let view = "reg", prevView = "reg";
+let facing = "user", stream = null, busy = false, procBusy = false;
+let staged = [];
+let lastPanel = 0;
+const hit = {}, lastEv = {};
+let reg = { active: false, name: "", step: 0, samples: [], okSince: 0, okN: 0, pauseUntil: 0 };
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const pad2 = n => String(n).padStart(2, "0");
+const fmt = t => { const d = new Date(t); return pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds()); };
+const fullFmt = t => new Date(t).getFullYear() + "-" + fmt(t);
+
+function saveDb() {
+  try { localStorage.setItem(KEY, JSON.stringify(db)); localStorage.setItem(KEY_PH, JSON.stringify(photos)); }
+  catch (_) { alert("저장 공간이 부족합니다. 불필요한 사람을 삭제하세요."); }
+}
+function saveLog() {
+  try { localStorage.setItem(KEY_LOG, JSON.stringify(log)); }
+  catch (_) {
+    log.forEach((e, i) => { if (i > 20) e.thumb = ""; });
+    try { localStorage.setItem(KEY_LOG, JSON.stringify(log)); } catch (__) {}
+  }
+}
+
+// 거리 → 일치율(%): 기준 거리에서 50%, 가까울수록 100%에 접근 (확률이 아닌 유사도 점수)
+const toPct = d => 100 / (1 + Math.exp(10 * (d - thr)));
+
+function rank(desc) {
+  return Object.entries(db).map(([name, list]) => {
+    const d = Math.min(...list.map(x => faceapi.euclideanDistance(desc, x)));
+    return { name, d, pct: toPct(d) };
+  }).sort((a, b) => a.d - b.d);
+}
+// 3단계 판정: match(일치) / review(확인 필요) / unknown(미등록)
+function judge(desc) {
+  if (!Object.keys(db).length) return { v: "unknown", top: null };
+  const top = rank(desc)[0];
+  const v = top.d < thr ? "match" : top.d < thr + REVIEW_MARGIN ? "review" : "unknown";
+  return { v, top };
+}
+
+// ---- 효과음·토스트·알림 ----
+let actx = null;
+function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.resume) actx.resume(); } catch (_) {} }
+function beep(freq, ms) {
+  if (!soundOn || !actx) return;
+  try {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.value = freq; g.gain.value = 0.08;
+    o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + ms / 1000);
+  } catch (_) {}
+}
+let toastTimer = null;
+function showToast(text, kind) {
+  const t = $("toast");
+  t.textContent = text; t.className = "show " + (kind || "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = ""; }, 3200);
+}
+function flashCam(kind) {
+  const f = $("flash");
+  f.dataset.k = kind;
+  f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+}
+function alertNow(kind) {
+  if (!alertOn) return;
+  flashCam(kind);
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (_) {}
+}
+
+// ---- 카메라 ----
+let modelsReady = false, modelsFailed = false, liveOpts = null, stillOpts = null;
+const setStatus = t => { $("status").textContent = t; };
+
+function camErrorText(e) {
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+    return "카메라 사용 불가: https:// 주소로 접속해야 합니다 (파일 직접 열기·http 불가)";
+  if (/KAKAOTALK|NAVER|FBAN|FBAV|Instagram|DaumApps|Line\//i.test(navigator.userAgent))
+    return "앱 안의 브라우저는 카메라가 막힙니다. Chrome/Safari로 열어주세요";
+  switch (e && e.name) {
+    case "NotAllowedError": case "SecurityError":
+      return "카메라 권한이 차단됨: 주소창 자물쇠(또는 브라우저 설정)에서 카메라를 허용하고 새로고침";
+    case "NotFoundError": return "카메라를 찾을 수 없습니다";
+    case "NotReadableError": return "다른 앱이 카메라를 사용 중입니다";
+    default: return "카메라 오류(" + ((e && e.name) || "알 수 없음") + ")";
+  }
+}
+let lastCamErr = "";
+async function diag() {
+  let perm = "알 수 없음";
+  try { perm = (await navigator.permissions.query({ name: "camera" })).state; } catch (_) {}
+  const sa = ((window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone) ? "예" : "아니오";
+  $("diag").textContent = "진단 · 주소: " + location.protocol + "//" + location.host + " · HTTPS: " + (window.isSecureContext ? "예" : "아니오") +
+    " · 설치앱 모드: " + sa + " · 카메라 권한: " + perm + (lastCamErr ? " · 오류: " + lastCamErr : "");
+}
+function camFail(e) {
+  lastCamErr = e ? (e.name + (e.message ? " - " + e.message : "")) : "mediaDevices 없음";
+  diag();
+  setStatus(camErrorText(e) + " · 탭하여 다시 시도");
+}
+
+async function startCam() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camFail(); return false; }
+  setStatus("카메라 연결 중… (권한 요청이 뜨면 허용)");
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false
+    });
+  } catch (e) {
+    if (e && (e.name === "OverconstrainedError" || e.name === "NotFoundError")) {
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); } catch (e2) { e = e2; }
+    }
+    if (!stream) { camFail(e); return false; }
+  }
+  video.srcObject = stream;
+  try { await video.play(); } catch (_) {}
+  if (!video.videoWidth) { try { await waitEvent(video, "loadedmetadata", 5000); } catch (_) {} }
+  overlay.width = video.videoWidth || 640; overlay.height = video.videoHeight || 480;
+  $("cam").style.aspectRatio = overlay.width + "/" + overlay.height;
+  $("cam").classList.toggle("back", facing !== "user");
+  if (!modelsFailed) setStatus(modelsReady ? "인식 중" : "카메라 연결됨 · 모델 불러오는 중…");
+  lastCamErr = ""; diag();
+  return true;
+}
+
+async function init() {
+  diag();
+  startCam();   // 모델 로드와 별개로 카메라 권한 요청을 먼저 띄움
+  if (typeof faceapi === "undefined") {
+    modelsFailed = true; setStatus("face-api 라이브러리 로드 실패: 인터넷 연결 확인 후 새로고침"); return;
+  }
+  try {
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+    ]);
+  } catch (e) {
+    modelsFailed = true; setStatus("모델 로드 실패: 인터넷 연결을 확인하고 새로고침"); return;
+  }
+  liveOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.5 });
+  stillOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 608, scoreThreshold: 0.4 });
+  modelsReady = true;
+  if (stream) setStatus("인식 중");
+  loop();
+}
+
+async function loop() {
+  const need = view === "check" || (view === "reg" && reg.active);
+  if (need && !busy && !procBusy && video.readyState >= 2 && video.videoWidth) {
+    busy = true;
+    try {
+      const dets = await faceapi.detectAllFaces(video, liveOpts).withFaceLandmarks().withFaceDescriptors();
+      render(dets);
+    } catch (e) { /* 다음 프레임에서 재시도 */ }
+    busy = false;
+  }
+  setTimeout(loop, 120);
+}
+
+// ---- 이미지 유틸 ----
+function cropThumb(src, box, size = 96) {
+  const pad = 0.25, sw = src.videoWidth || src.width, sh = src.videoHeight || src.height;
+  const x = Math.max(0, box.x - box.width * pad), y = Math.max(0, box.y - box.height * pad);
+  const w = Math.min(sw - x, box.width * (1 + 2 * pad)), h = Math.min(sh - y, box.height * (1 + 2 * pad));
+  const c = document.createElement("canvas"); c.width = size; c.height = size;
+  c.getContext("2d").drawImage(src, x, y, w, h, 0, 0, size, size);
+  return c.toDataURL("image/jpeg", 0.7);
+}
+function toCanvas(src, w, h, maxSide = 960) {
+  const s = Math.min(1, maxSide / Math.max(w, h));
+  const c = document.createElement("canvas");
+  c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+function drawBox(b, color, label) {
+  const W = overlay.width, mirror = facing === "user";
+  const x = mirror ? W - b.x - b.width : b.x;
+  ctx.lineWidth = Math.max(2, W / 200);
+  ctx.strokeStyle = color;
+  ctx.strokeRect(x, b.y, b.width, b.height);
+  if (!label) return;
+  ctx.font = "bold " + Math.round(W / 26) + "px sans-serif";
+  const tw = ctx.measureText(label).width + 10, th = Math.round(W / 22);
+  ctx.fillStyle = color;
+  ctx.fillRect(x, Math.max(0, b.y - th), tw, th);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(label, x + 5, Math.max(th - 6, b.y - 6));
+}
+
+// ---- 화면 전환 ----
+function updateTag() {
+  $("modeTag").textContent = view === "reg" ? "얼굴 등록" : (mode ? mode + " 기록 중" : "기록 꺼짐");
+}
+function setView(v) {
+  if (v !== view && reg.active) cancelReg();
+  if (v === "set" && view !== "set") prevView = view;
+  view = v;
+  document.querySelectorAll(".view").forEach(x => x.classList.toggle("on", x.id === "v_" + v));
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  $("cam").style.display = (v === "reg" || v === "check") ? "" : "none";
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  updateTag();
+  if (v === "log") renderLog();
+  if (v === "check") { renderRoster(); renderPanel([]); }
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => setView(b.dataset.v));
+$("gear").onclick = () => setView("set");
+$("setBack").onclick = () => setView(prevView === "set" ? "reg" : prevView);
+$("goReg").onclick = () => setView("reg");
+
+// ---- 얼굴 등록: 카메라 자동 촬영 ----
+function showRegState(s) {   // idle | busy | done
+  $("regIdle").classList.toggle("hide", s !== "idle");
+  $("regBusy").classList.toggle("hide", s !== "busy");
+  $("regDone").classList.toggle("hide", s !== "done");
+  $("guide").classList.toggle("hide", s !== "busy");
+  $("oval").classList.toggle("hide", s !== "busy");
+}
+function freeName() {
+  let n = 1;
+  while (db["참가자 " + n]) n++;
+  return "참가자 " + n;
+}
+function ensureName() {
+  let name = $("regName").value.trim();
+  if (!name) name = freeName();
+  if (!db[name] && Object.keys(db).length >= MAX_PEOPLE) { showToast("최대 " + MAX_PEOPLE + "명까지 등록할 수 있어요", "warn"); return null; }
+  return name;
+}
+function setGuide(text, p, sub) {
+  $("guideText").textContent = text;
+  $("guideSub").textContent = sub || "";
+  $("guideBar").firstElementChild.style.width = Math.round(p * 100) + "%";
+}
+function updateRegReady() {
+  const ok = modelsReady && !!stream && video.videoWidth > 0;
+  const b = $("regStart");
+  b.disabled = !ok;
+  b.textContent = ok ? "얼굴 등록 시작" : (modelsFailed ? "모델 로드 실패 · 새로고침" : "카메라·모델 준비 중…");
+}
+setInterval(updateRegReady, 500);
+
+function startReg() {
+  if (!modelsReady || !stream) return;
+  const name = ensureName();
+  if (!name) return;
+  unlockAudio();
+  $("regName").blur();
+  reg = { active: true, name, step: 0, samples: [], okSince: 0, okN: 0, pauseUntil: 0 };
+  showRegState("busy");
+  renderShots();
+  setGuide(STEPS[0], 0, "1/" + STEPS.length);
+  window.scrollTo(0, 0);
+}
+function cancelReg() {
+  reg.active = false;
+  showRegState("idle");
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+}
+function renderShots() {
+  $("regShots").innerHTML = reg.samples.map(s => '<img src="' + s.thumb + '" alt="">').join("");
+  $("regBusyTxt").textContent = esc(reg.name) + " 촬영 중 " + reg.samples.length + "/" + STEPS.length;
+}
+
+function regTick(dets, now) {
+  const W = overlay.width, H = overlay.height;
+  let msg = null, good = null;
+  if (dets.length === 0) msg = "얼굴을 화면 안에 맞춰주세요";
+  else if (dets.length > 1) msg = "한 명만 화면에 나오게 해주세요";
+  else {
+    const b = dets[0].detection.box, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    if (b.width < W * 0.22) msg = "조금 더 가까이 와주세요";
+    else if (cx < W * 0.2 || cx > W * 0.8 || cy < H * 0.12 || cy > H * 0.88) msg = "얼굴을 화면 가운데로";
+    else good = dets[0];
+  }
+  const sub = (reg.step + 1) + "/" + STEPS.length;
+  if (now < reg.pauseUntil) { setGuide(STEPS[reg.step], 0, sub + " · 자세를 바꿔주세요"); return; }
+  if (!good) { reg.okSince = 0; reg.okN = 0; setGuide(msg, 0, sub); return; }
+  if (!reg.okSince) reg.okSince = now;
+  reg.okN++;
+  const p = Math.min(1, (now - reg.okSince) / 1100);
+  setGuide(STEPS[reg.step], p, sub + " · 그대로 유지하세요");
+  if (p >= 1 && reg.okN >= 2) captureSample(good, now);
+}
+function captureSample(d, now) {
+  reg.samples.push({ desc: Array.from(d.descriptor), thumb: cropThumb(video, d.detection.box, 96) });
+  reg.step++; reg.okSince = 0; reg.okN = 0; reg.pauseUntil = now + 1200;
+  flashCam("snap"); beep(660, 80);
+  try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) {}
+  renderShots();
+  if (reg.step >= STEPS.length) finishReg();
+  else setGuide(STEPS[reg.step], 0, (reg.step + 1) + "/" + STEPS.length + " · 자세를 바꿔주세요");
+}
+function commitPerson(name, descs, thumb, replacePhoto) {
+  db[name] = (db[name] || []).concat(descs).slice(-MAX_PER);
+  if (thumb && (replacePhoto || !photos[name])) photos[name] = thumb;
+  saveDb(); renderPeople(); renderRoster();
+}
+function showDone(name) {
+  $("doneBox").innerHTML = (photos[name] ? '<img src="' + photos[name] + '" alt="">' : "") +
+    '<p class="big">' + esc(name) + ' 등록 완료!</p><div class="small">총 ' + Object.keys(db).length + ' / ' + MAX_PEOPLE + '명 등록됨</div>';
+  showRegState("done");
+}
+function finishReg() {
+  const name = reg.name;
+  commitPerson(name, reg.samples.map(s => s.desc.map(v => +v.toFixed(4))), reg.samples[0].thumb, true);
+  reg.active = false;
+  beep(990, 200);
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  showDone(name);
+}
+$("regStart").onclick = startReg;
+$("regCancel").onclick = cancelReg;
+$("doneNext").onclick = () => { $("regName").value = ""; showRegState("idle"); };
+$("doneGo").onclick = () => { $("regName").value = ""; showRegState("idle"); setView("check"); };
+$("regName").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); startReg(); } };
+
+// ---- 등록된 사람 목록 ----
+function renderPeople() {
+  const names = Object.keys(db);
+  $("regCount").textContent = names.length + " / " + MAX_PEOPLE + "명";
+  $("regPeople").innerHTML = names.length ? names.map(n =>
+    '<div class="pcard">' + (photos[n] ? '<img src="' + photos[n] + '" alt="">' : '<span class="ph"></span>') +
+    '<div class="pn">' + esc(n) + '</div><button data-del="' + esc(n) + '" aria-label="삭제">✕</button></div>').join("")
+    : '<div class="small">아직 등록된 사람이 없습니다.</div>';
+  const cur = $("truth").value;
+  $("truth").innerHTML = '<option value="">정답: 미등록자 (등록되지 않은 사람들)</option>' +
+    names.map(n => '<option value="' + esc(n) + '">정답: ' + esc(n) + ' 본인</option>').join("");
+  if (names.includes(cur)) $("truth").value = cur;
+}
+$("regPeople").onclick = e => {
+  const n = e.target.dataset.del;
+  if (n && confirm(n + " 삭제할까요?")) { delete db[n]; delete photos[n]; saveDb(); renderPeople(); renderRoster(); }
+};
+
+// ---- 출입 체크 ----
+function render(dets) {
+  const W = overlay.width, H = overlay.height, now = Date.now();
+  ctx.clearRect(0, 0, W, H);
+  if (view === "reg") {
+    if (reg.active) { dets.forEach(d => drawBox(d.detection.box, "#ffffff", "")); regTick(dets, now); }
+    return;
+  }
+  if (view !== "check") return;
+  const items = [];
+  dets.forEach(det => {
+    const b = det.detection.box, j = judge(det.descriptor);
+    const color = j.v === "match" ? "#0f9d58" : j.v === "review" ? "#f29900" : "#6b7280";
+    const label = j.v === "match" ? j.top.name + " " + Math.round(j.top.pct) + "%"
+                : j.v === "review" ? j.top.name + "? " + Math.round(j.top.pct) + "%" : "사람";
+    drawBox(b, color, label);
+    items.push({ j, box: b, area: b.width * b.height });
+  });
+  handleEvents(items, now);
+  if (!items.length || now - lastPanel > 350) { lastPanel = now; renderPanel(items); }
+}
+
+function streak(key, now) {
+  const h = hit[key];
+  if (h && now - h.t < 2000) { h.n++; h.t = now; } else hit[key] = { n: 1, t: now };
+  return hit[key].n;
+}
+const isRecorded = (m, name) => log.some(e => e.mode === m && e.verdict === "match" && e.name === name);
+
+// 연속 3회 이상 같은 결과가 나오면 기록 (출입 체크 화면 + 출항/입항 버튼이 켜진 상태에서만)
+function handleEvents(items, now) {
+  if (view !== "check" || !mode || !Object.keys(db).length) return;
+  const seen = new Set();
+  items.forEach(it => {
+    const j = it.j;
+    const key = j.v === "match" ? "m:" + j.top.name : j.v === "review" ? "r:" + j.top.name : "u";
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (j.v === "match" && isRecorded(mode, j.top.name)) return;   // 사람당 모드별 1장만
+    if (streak(key, now) < 3) return;
+    const ck = mode + key, cd = j.v === "unknown" ? 8000 : 10000;
+    if (now - (lastEv[ck] || 0) <= cd) return;
+    lastEv[ck] = now;
+    addEntry({
+      t: now, mode, verdict: j.v,
+      name: j.v === "unknown" ? "" : j.top.name,
+      pct: j.v === "unknown" ? null : +j.top.pct.toFixed(1),
+      d: +j.top.d.toFixed(3),
+      thumb: cropThumb(video, it.box, j.v === "match" ? 128 : 64),
+    });
+    if (j.v === "match") { showToast("✓ " + j.top.name + " " + mode + " 확인 · " + j.top.pct.toFixed(0) + "%", "ok"); beep(880, 150); }
+    else if (j.v === "review") { showToast("확인 필요: " + j.top.name + "? " + j.top.pct.toFixed(0) + "%", "warn"); beep(440, 200); alertNow("review"); }
+    else { showToast("미등록자 감지", "no"); beep(300, 250); alertNow("unknown"); }
+  });
+}
+
+function renderPanel(items) {
+  if (!items.length) { $("resEmpty").style.display = ""; $("resBox").innerHTML = ""; return; }
+  $("resEmpty").style.display = "none";
+  items.sort((a, b) => b.area - a.area);
+  $("resBox").innerHTML = items.slice(0, 5).map(it => {
+    const j = it.j;
+    if (j.v === "unknown") {
+      return '<div class="face"><div class="top"><span class="name person">사람</span>' +
+        '<span class="verdict mute">미등록</span></div></div>';
+    }
+    const cls = j.v === "review" ? "review" : "";
+    const ref = photos[j.top.name] ? '<img src="' + photos[j.top.name] + '" alt="">' : '<div class="ph">사진 없음</div>';
+    const cur = '<img src="' + cropThumb(video, it.box, 96) + '" alt="">';
+    const verdict = j.v === "match"
+      ? '<span class="verdict ok">일치</span> · 거리 ' + j.top.d.toFixed(3) + ' (기준 ' + thr.toFixed(2) + ' 미만) · ' +
+        (!mode ? "기록 꺼짐" : isRecorded(mode, j.top.name) ? '<b class="ok">' + mode + ' 기록 완료</b>' : mode + " 기록 중")
+      : '<span class="verdict warn">확인 필요</span> · 담당자 확인 · 거리 ' + j.top.d.toFixed(3);
+    return '<div class="face"><div class="top"><span class="name ' + cls + '">' + esc(j.top.name) + (j.v === "review" ? "?" : "") + '</span>' +
+      '<span class="pct ' + cls + '">' + j.top.pct.toFixed(1) + '%</span></div>' +
+      '<div class="bar"><i class="' + cls + '" style="width:' + j.top.pct + '%"></i></div>' +
+      '<div class="cmp"><figure>' + ref + '등록</figure><span class="vs">⇄</span><figure>' + cur + '현재</figure></div>' +
+      '<div class="small">' + verdict + '</div></div>';
+  }).join("");
+}
+
+function applyMode() {
+  document.querySelectorAll(".seg button").forEach(x => x.classList.toggle("on", x.dataset.m === mode));
+  updateTag();
+  renderRoster();
+}
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+  unlockAudio();
+  mode = (mode === b.dataset.m) ? null : b.dataset.m;
+  applyMode();
+});
+
+function renderRoster() {
+  const names = Object.keys(db);
+  $("chkEmpty").classList.toggle("hide", names.length > 0);
+  if (!mode) {
+    $("rosterTxt").textContent = "출항 또는 입항 버튼을 누르면 기록이 시작됩니다";
+    $("chips").innerHTML = names.length ? names.map(x => '<span class="chip">' + esc(x) + '</span>').join("") : "";
+    return;
+  }
+  const done = new Set(log.filter(e => e.mode === mode && e.verdict === "match").map(e => e.name));
+  const n = names.filter(x => done.has(x)).length;
+  $("rosterTxt").textContent = mode + " 기록 중 · 확인 " + n + " / " + names.length + "명";
+  $("chips").innerHTML = names.map(x => '<span class="chip ' + (done.has(x) ? "on" : "") + '">' + esc(x) + '</span>').join("");
+}
+
+// ---- 기록 ----
+function addEntry(e) {
+  log.unshift(e);
+  while (log.length > MAX_LOG) {   // 일치 기록은 남기고, 오래된 확인필요/미등록 기록부터 삭제
+    let i = -1;
+    for (let k = log.length - 1; k >= 0; k--) if (log[k].verdict !== "match") { i = k; break; }
+    log.splice(i >= 0 ? i : log.length - 1, 1);
+  }
+  saveLog(); renderLog(); renderRoster();
+}
+function renderLog() {
+  const cnt = m => new Set(log.filter(e => e.mode === m && e.verdict === "match").map(e => e.name)).size;
+  $("logSum").innerHTML =
+    '<div class="sumcard"><b>' + cnt("출항") + '</b><span>출항 확인</span></div>' +
+    '<div class="sumcard"><b>' + cnt("입항") + '</b><span>입항 확인</span></div>' +
+    '<div class="sumcard"><b>' + log.length + '</b><span>전체 기록</span></div>';
+  $("logList").innerHTML = log.length ? log.map(e =>
+    '<div class="le">' + (e.thumb ? '<img src="' + e.thumb + '" alt="">' : '<span class="ph"></span>') +
+    '<div class="lm"><div class="ln">' + (e.name ? esc(e.name) : "사람") + '</div><div class="small">' + e.mode + ' · ' + fmt(e.t) + '</div></div>' +
+    '<div class="lr">' + (e.pct == null ? "" : '<div class="lp">' + e.pct.toFixed(1) + '%</div>') +
+    '<span class="tag ' + e.verdict + '">' + VLABEL[e.verdict] + '</span></div></div>').join("")
+    : '<div class="empty">아직 기록이 없습니다.<br>출입 체크에서 출항 또는 입항을 눌러 시작하세요.</div>';
+}
+function downloadCSV(filename, rows) {
+  const csv = "\ufeff" + rows.map(r => r.map(c => '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = filename; a.click();
+}
+$("logList").onclick = e => { if (e.target.tagName === "IMG") { $("lbImg").src = e.target.src; $("lb").style.display = "flex"; } };
+$("lb").onclick = () => { $("lb").style.display = "none"; };
+$("logCsv").onclick = () => {
+  if (!log.length) { alert("내보낼 기록이 없습니다."); return; }
+  downloadCSV("출입기록.csv", [["시각", "구분", "이름", "일치율(%)", "거리", "판정"]].concat(
+    log.map(e => [fullFmt(e.t), e.mode, e.name || "사람", e.pct, e.d, VLABEL[e.verdict]])));
+};
+$("logClear").onclick = () => {
+  if (log.length && confirm("기록을 모두 지울까요? (출항/입항 확인 현황도 초기화됩니다)")) {
+    log = []; saveLog(); renderLog(); renderRoster();
+    Object.keys(lastEv).forEach(k => delete lastEv[k]);
+  }
+};
+
+// ---- 사진·동영상으로 등록 (보조 방법) ----
+const area = d => d.detection.box.width * d.detection.box.height;
+const isVideo = f => f.type.startsWith("video") || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name);
+
+async function bestFace(cv) {
+  const dets = await faceapi.detectAllFaces(cv, stillOpts).withFaceLandmarks().withFaceDescriptors();
+  if (!dets.length) return { n: 0 };
+  dets.sort((a, b) => area(b) - area(a));
+  return { n: dets.length, det: dets[0] };
+}
+function waitEvent(el, ev, ms) {
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error("timeout")), ms);
+    el.addEventListener(ev, () => { clearTimeout(t); res(); }, { once: true });
+  });
+}
+// 사진은 1회, 동영상은 여러 프레임에 대해 onSample({none}|{det,cv,multi})을 호출. true를 반환하면 중단.
+async function sampleFaces(file, maxFrames, onSample) {
+  const url = URL.createObjectURL(file);
+  try {
+    if (!isVideo(file)) {
+      const img = new Image(); img.src = url; await img.decode();
+      const cv = toCanvas(img, img.naturalWidth, img.naturalHeight);
+      const r = await bestFace(cv);
+      onSample(r.n ? { det: r.det, cv, multi: r.n > 1 } : { none: true });
+      return;
+    }
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+    try {
+      await waitEvent(v, "loadeddata", 10000);
+      const dur = v.duration;
+      if (!isFinite(dur) || dur <= 0) throw new Error("duration");
+      const n = Math.min(maxFrames, Math.max(2, Math.floor(dur / 0.6)));
+      for (let i = 0; i < n; i++) {
+        v.currentTime = Math.min(dur - 0.05, dur * (i + 0.5) / n);
+        await waitEvent(v, "seeked", 6000);
+        const cv = toCanvas(v, v.videoWidth, v.videoHeight);
+        const r = await bestFace(cv);
+        if (onSample(r.n ? { det: r.det, cv, multi: r.n > 1 } : { none: true })) break;
+      }
+    } finally { v.removeAttribute("src"); v.load(); }
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function tryStage(det, cv) {
+  if (det.detection.box.width < 60) return "small";
+  const desc = Array.from(det.descriptor);
+  const minD = staged.length ? Math.min(...staged.map(s => faceapi.euclideanDistance(desc, s.desc))) : 1;
+  if (minD < 0.12) return "dup";
+  staged.push({ desc, thumb: cropThumb(cv, det.detection.box) });
+  return "ok";
+}
+$("upToggle").onclick = () => { $("upBox").classList.toggle("hide"); };
+
+$("files").onchange = async e => {
+  const files = Array.from(e.target.files); e.target.value = "";
+  if (!files.length) return;
+  if (!modelsReady) { alert("모델이 아직 로드되지 않았습니다."); return; }
+  procBusy = true;
+  while (busy) await sleep(50);
+  const stat = { added: 0, none: 0, small: 0, dup: 0, multi: 0, fail: 0 };
+  for (let i = 0; i < files.length; i++) {
+    if (staged.length >= MAX_STAGE) break;
+    $("prog").textContent = "처리 중 (" + (i + 1) + "/" + files.length + ") " + files[i].name;
+    try {
+      await sampleFaces(files[i], 12, item => {
+        if (item.none) { stat.none++; return false; }
+        if (item.multi) stat.multi++;
+        const res = tryStage(item.det, item.cv);
+        stat[res === "ok" ? "added" : res]++;
+        return staged.length >= MAX_STAGE;
+      });
+    } catch (_) { stat.fail++; }
+    renderThumbs();
+  }
+  procBusy = false;
+  const msg = ["얼굴 " + stat.added + "개 추가"];
+  if (stat.none) msg.push("얼굴 없음 " + stat.none);
+  if (stat.small) msg.push("너무 작음 " + stat.small);
+  if (stat.dup) msg.push("중복 " + stat.dup);
+  if (stat.multi) msg.push("여러 명 사진 " + stat.multi + "건(가장 큰 얼굴만 사용)");
+  if (stat.fail) msg.push("읽기 실패 " + stat.fail);
+  if (staged.length >= MAX_STAGE) msg.push("최대 " + MAX_STAGE + "개 도달");
+  $("prog").textContent = msg.join(" / ");
+};
+function renderThumbs() {
+  $("thumbs").innerHTML = staged.map((s, i) => '<img data-i="' + i + '" src="' + s.thumb + '" alt="">').join("");
+  $("save").disabled = staged.length < 1;
+  $("save").textContent = staged.length ? "이 사람 저장 (얼굴 " + staged.length + "개)" : "이 사람 저장";
+}
+$("thumbs").onclick = e => {
+  const i = e.target.dataset && e.target.dataset.i;
+  if (i !== undefined) { staged.splice(+i, 1); renderThumbs(); }
+};
+$("reset").onclick = () => { staged = []; $("prog").textContent = ""; renderThumbs(); };
+$("save").onclick = () => {
+  const name = ensureName();
+  if (!name || !staged.length) return;
+  commitPerson(name, staged.map(s => s.desc.map(v => +v.toFixed(4))), staged[0].thumb, false);
+  staged = []; $("prog").textContent = ""; renderThumbs();
+  $("upBox").classList.add("hide");
+  showDone(name);
+};
+
+// ---- 설정 ----
+$("thr").value = thr;
+const showThr = () => $("thrTxt").textContent = "현재 " + thr.toFixed(2) + " · 낮을수록 엄격(오인식↓, 놓침↑), 높을수록 느슨. 기본 0.50 · '확인 필요'는 기준 ~ +" + REVIEW_MARGIN.toFixed(2) + " 구간";
+$("thr").oninput = e => { thr = parseFloat(e.target.value); localStorage.setItem(KEY_THR, thr); showThr(); };
+showThr();
+
+$("alertOn").checked = alertOn;
+$("alertOn").onchange = e => { alertOn = e.target.checked; localStorage.setItem("faces_alert", alertOn ? "1" : "0"); };
+$("soundOn").checked = soundOn;
+$("soundOn").onchange = e => { soundOn = e.target.checked; localStorage.setItem("faces_sound", soundOn ? "1" : "0"); };
+$("alertTest").onclick = () => { unlockAudio(); const was = alertOn; alertOn = true; alertNow("unknown"); alertOn = was; beep(440, 200); };
+
+$("export").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ v: 2, faces: db, photos })], { type: "application/json" }));
+  a.download = "faces.json"; a.click();
+};
+$("import").onclick = () => $("file").click();
+$("file").onchange = async e => {
+  try {
+    const data = JSON.parse(await e.target.files[0].text());
+    const faces = data.faces || data, ph = data.photos || {};
+    let skipped = 0;
+    Object.entries(faces).forEach(([n, list]) => {
+      const ok = Array.isArray(list) && list.length && list.every(d => Array.isArray(d) && d.length === 128);
+      if (!ok) return;
+      if (!db[n] && Object.keys(db).length >= MAX_PEOPLE) { skipped++; return; }
+      db[n] = list.slice(-MAX_PER);
+      if (typeof ph[n] === "string" && ph[n].startsWith("data:image/")) photos[n] = ph[n];
+    });
+    saveDb(); renderPeople(); renderRoster();
+    if (skipped) alert(skipped + "명은 " + MAX_PEOPLE + "명 제한으로 가져오지 못했습니다.");
+  } catch (_) { alert("올바른 파일이 아닙니다."); }
+  e.target.value = "";
+};
+$("wipe").onclick = () => {
+  if (!confirm("등록된 얼굴과 기록을 모두 삭제할까요? 되돌릴 수 없습니다.")) return;
+  db = {}; photos = {}; log = []; mode = null;
+  saveDb(); saveLog();
+  Object.keys(lastEv).forEach(k => delete lastEv[k]);
+  renderPeople(); renderLog(); applyMode();
+  showToast("초기화했습니다", "ok");
+};
+
+// ---- 인식 성능 시험 ----
+let evRows = [], evMeta = null;
+$("evFiles").onchange = async e => {
+  const files = Array.from(e.target.files); e.target.value = "";
+  if (!files.length) return;
+  if (!modelsReady) { alert("모델이 아직 로드되지 않았습니다."); return; }
+  if (!Object.keys(db).length) { alert("등록된 사람이 없습니다. 먼저 등록하세요."); return; }
+  procBusy = true;
+  while (busy) await sleep(50);
+  const truth = $("truth").value;
+  evRows = []; let none = 0, fail = 0;
+  for (let i = 0; i < files.length; i++) {
+    $("evProg").textContent = "시험 중 (" + (i + 1) + "/" + files.length + ") " + files[i].name;
+    try {
+      await sampleFaces(files[i], 8, item => {
+        if (item.none) { none++; return false; }
+        const j = judge(item.det.descriptor);
+        const ok = truth === "" ? j.v === "unknown" : (j.v === "match" && j.top.name === truth);
+        evRows.push({ file: files[i].name, v: j.v, name: j.top.name, pct: j.top.pct, d: j.top.d, ok });
+        return false;
+      });
+    } catch (_) { fail++; }
+  }
+  procBusy = false;
+  evMeta = { truth, none, fail };
+  $("evProg").textContent = "완료";
+  renderEval();
+};
+function renderEval() {
+  const rows = evRows, N = rows.length;
+  if (!N) { $("evSum").innerHTML = '<div class="sum">얼굴이 검출된 샘플이 없습니다.' + (evMeta.none ? " (얼굴 없음 " + evMeta.none + ")" : "") + '</div>'; return; }
+  const c = { match: 0, review: 0, unknown: 0 };
+  rows.forEach(r => c[r.v]++);
+  const p = n => (n / N * 100).toFixed(1) + "%";
+  let html;
+  if (evMeta.truth === "") {
+    html = "정답 기준: 미등록자 (모두 '미등록'이어야 정답)<br>" +
+      "시험 샘플 <b>" + N + "</b>개<br>" +
+      "정답(미등록 판정) <b>" + c.unknown + "</b> (" + p(c.unknown) + ")<br>" +
+      "확인 필요로 분류 <b>" + c.review + "</b> (" + p(c.review) + ")<br>" +
+      '<span class="no">오인식(등록자로 일치 판정) <b>' + c.match + "</b> (" + p(c.match) + ")</span>";
+  } else {
+    const right = rows.filter(r => r.v === "match" && r.name === evMeta.truth).length;
+    const wrong = rows.filter(r => r.v === "match" && r.name !== evMeta.truth).length;
+    html = "정답 기준: " + esc(evMeta.truth) + " 본인<br>" +
+      "시험 샘플 <b>" + N + "</b>개<br>" +
+      '<span class="ok">정답(본인으로 일치) <b>' + right + "</b> (" + p(right) + ")</span><br>" +
+      "확인 필요로 분류 <b>" + c.review + "</b> (" + p(c.review) + ")<br>" +
+      "놓침(미등록 판정) <b>" + c.unknown + "</b> (" + p(c.unknown) + ")<br>" +
+      '<span class="no">오인식(다른 사람으로 일치) <b>' + wrong + "</b> (" + p(wrong) + ")</span>";
+  }
+  const extra = [];
+  if (evMeta.none) extra.push("얼굴 없음 " + evMeta.none);
+  if (evMeta.fail) extra.push("읽기 실패 " + evMeta.fail);
+  $("evSum").innerHTML = '<div class="sum">' + html + (extra.length ? '<br><span class="small">' + extra.join(" / ") + " (집계 제외)</span>" : "") +
+    '<br><span class="small">일치 기준 ' + thr.toFixed(2) + ' 적용</span></div>';
+  $("evBody").innerHTML = rows.slice(0, 80).map(r =>
+    '<tr><td>' + esc(r.file) + '</td><td>' + (r.v === "unknown" ? "사람" : esc(r.name)) + '</td>' +
+    '<td>' + (r.v === "unknown" ? "-" : r.pct.toFixed(1) + "%") + '</td><td>' + r.d.toFixed(3) + '</td>' +
+    '<td><span class="tag ' + r.v + '">' + VLABEL[r.v] + '</span></td><td>' + (r.ok ? "○" : r.v === "review" ? "△" : "×") + '</td></tr>').join("");
+  $("evTbl").style.display = ""; $("evCsv").style.display = "block";
+}
+$("evCsv").onclick = () => {
+  downloadCSV("평가결과.csv", [["파일", "후보", "일치율(%)", "거리", "판정", "정답여부"]].concat(
+    evRows.map(r => [r.file, r.v === "unknown" ? "사람" : r.name, r.v === "unknown" ? "" : r.pct.toFixed(1), r.d.toFixed(3), VLABEL[r.v], r.ok ? "정답" : r.v === "review" ? "확인필요" : "오답"])));
+};
+
+// ---- 시작 ----
+$("flip").onclick = async () => { facing = facing === "user" ? "environment" : "user"; await startCam(); };
+$("status").onclick = () => { if (!stream) startCam(); };
+try {
+  navigator.permissions.query({ name: "camera" }).then(p => {
+    p.onchange = () => { if (p.state === "granted" && !stream) startCam(); };
+  }).catch(() => {});
+} catch (_) {}
+
+renderPeople(); renderThumbs(); renderLog(); renderRoster();
+showRegState("idle");
+setView(Object.keys(db).length ? "check" : "reg");
+init();
+</script>
+</body>
+</html>
